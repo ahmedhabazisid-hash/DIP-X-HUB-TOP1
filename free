@@ -1,3 +1,4 @@
+
 --// DIPX UNIFIED MENU v2 - settings inside one menu + separate UI manager
  do
     local ok, err = pcall(function()
@@ -2525,6 +2526,42 @@ function fireGrapple()
     _fireGrapple()
 end
 _G.MeerkoFireGrapple = fireGrapple
+
+-- TP grapple sequence:
+-- Equip the Grapple Hook, trigger it once, then immediately cancel its
+-- physical velocity so the hook activation itself does not drag the player.
+local function _primeGrappleForTP()
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not hum or not hrp then return false end
+
+    local tool = findGrapple and findGrapple() or nil
+    if not tool then
+        local bp = LP:FindFirstChild("Backpack")
+        tool = (bp and bp:FindFirstChild("Grapple Hook")) or char:FindFirstChild("Grapple Hook")
+    end
+    if not tool or not tool:IsA("Tool") then return false end
+
+    if tool.Parent ~= char then
+        pcall(function() hum:EquipTool(tool) end)
+        local t0 = os.clock()
+        while tool.Parent ~= char and os.clock() - t0 < 0.6 do
+            RunService.Heartbeat:Wait()
+        end
+    end
+    if tool.Parent ~= char then return false end
+
+    pcall(_fireGrapple)
+
+    -- Keep the grapple activation from changing the player's movement.
+    pcall(function()
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end)
+    return true
+end
+_G.MeerkoPrimeGrappleForTP = _primeGrappleForTP
 
 CARPET_SPEED = 280
 INBASE_SPEED = 450
@@ -5652,7 +5689,10 @@ function doVelocityTP(forceGrapple)
 
     _G.MeerkoStealHold = true
 
-    pcall(fireGrapple)
+    -- Original TP sequence: grab/use Grapple Hook BEFORE the movement starts.
+    -- The activation is immediately velocity-cancelled so it does not pull
+    -- the player away from the intended route.
+    pcall(_primeGrappleForTP)
 
     if pet.conveyor then
         pcall(conveyorTP, pet, forceGrapple)
@@ -6020,6 +6060,10 @@ function doVelocityTP(forceGrapple)
         local _rh = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
         if _rh then _rh.AutoRotate = true end
     end)
+
+    -- Use the Grapple Hook a second time after reaching the target base,
+    -- before the final in-base/steal sequence.
+    pcall(_primeGrappleForTP)
 
     local _inBaseOk = false
     if _G.MeerkoNewInBase ~= false and type(_G.MeerkoInBaseApproach) == "function" then
