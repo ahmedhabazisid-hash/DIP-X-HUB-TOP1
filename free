@@ -1,4 +1,3 @@
-
 --// DIPX UNIFIED MENU v2 - settings inside one menu + separate UI manager
  do
     local ok, err = pcall(function()
@@ -380,21 +379,6 @@
                 toggle("DARK MODE","MeerkoDarkMode",function(v) _G.MeerkoDarkMode=v; if _G.MeerkoSetDarkMode then pcall(_G.MeerkoSetDarkMode,v) end; saveSettings() end)
             elseif tab=="MISC" then
                 makeTitle("MISC","Protection / utility controls.")
-
-                -- ALWAYS AVAILABLE: save every DIPX setting from the MISC page.
-                action("SAVE ALL SETTINGS", function()
-                    pcall(function()
-                        if type(saveState) == "function" then
-                            saveState()
-                        end
-                    end)
-                    pcall(function()
-                        if type(_G.MeerkoSaveSettings) == "function" then
-                            _G.MeerkoSaveSettings()
-                        end
-                    end)
-                end, "Save speed, Anti Flasher, Auto Kick and all other settings")
-
                 toggle("AUTO KICK ON STEAL","MeerkoAutoKickOnSteal")
                 toggle("ANTI FLASHER","MeerkoAntiFlasherActive",function(v)
                     local g=panel("MeerkoAntiFlasher")
@@ -2522,46 +2506,20 @@ function fireGrapple()
         local hum = char:FindFirstChildOfClass("Humanoid")
         if tool and hum then pcall(function() hum:EquipTool(tool) end) end
     end
-    if not char:FindFirstChild("Grapple Hook") then return end
+    local hook = char:FindFirstChild("Grapple Hook")
+    if not hook or not hook:IsA("Tool") then return end
+    -- Use the Tool itself first (server-authoritative games may reject a raw remote call).
+    pcall(function() hook:Activate() end)
+    task.wait(0.08)
     _fireGrapple()
+    -- Some implementations need a second activation after the tool is fully equipped.
+    task.delay(0.12, function()
+        if hook.Parent == char then
+            pcall(function() hook:Activate() end)
+        end
+    end)
 end
 _G.MeerkoFireGrapple = fireGrapple
-
--- TP grapple sequence:
--- Equip the Grapple Hook, trigger it once, then immediately cancel its
--- physical velocity so the hook activation itself does not drag the player.
-local function _primeGrappleForTP()
-    local char = LP.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not char or not hum or not hrp then return false end
-
-    local tool = findGrapple and findGrapple() or nil
-    if not tool then
-        local bp = LP:FindFirstChild("Backpack")
-        tool = (bp and bp:FindFirstChild("Grapple Hook")) or char:FindFirstChild("Grapple Hook")
-    end
-    if not tool or not tool:IsA("Tool") then return false end
-
-    if tool.Parent ~= char then
-        pcall(function() hum:EquipTool(tool) end)
-        local t0 = os.clock()
-        while tool.Parent ~= char and os.clock() - t0 < 0.6 do
-            RunService.Heartbeat:Wait()
-        end
-    end
-    if tool.Parent ~= char then return false end
-
-    pcall(_fireGrapple)
-
-    -- Keep the grapple activation from changing the player's movement.
-    pcall(function()
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-    end)
-    return true
-end
-_G.MeerkoPrimeGrappleForTP = _primeGrappleForTP
 
 CARPET_SPEED = 280
 INBASE_SPEED = 450
@@ -5689,10 +5647,7 @@ function doVelocityTP(forceGrapple)
 
     _G.MeerkoStealHold = true
 
-    -- Original TP sequence: grab/use Grapple Hook BEFORE the movement starts.
-    -- The activation is immediately velocity-cancelled so it does not pull
-    -- the player away from the intended route.
-    pcall(_primeGrappleForTP)
+    pcall(fireGrapple)
 
     if pet.conveyor then
         pcall(conveyorTP, pet, forceGrapple)
@@ -6060,10 +6015,6 @@ function doVelocityTP(forceGrapple)
         local _rh = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
         if _rh then _rh.AutoRotate = true end
     end)
-
-    -- Use the Grapple Hook a second time after reaching the target base,
-    -- before the final in-base/steal sequence.
-    pcall(_primeGrappleForTP)
 
     local _inBaseOk = false
     if _G.MeerkoNewInBase ~= false and type(_G.MeerkoInBaseApproach) == "function" then
@@ -7490,64 +7441,6 @@ do
         return t
     end
 
-    -- LOAD SAVED SETTINGS: restore the same values that SAVE writes.
-    -- This runs before the UI is created so toggles/sliders start from the saved state.
-    local function loadSavedSettings()
-        local t = loadCfgTable()
-        if type(t) ~= "table" then return end
-
-        local nums = {
-            tpVelocity="TPVelocity", climbSpeed="MeerkoClimb", goSpeed="MeerkoGoSpeed",
-            cframeSpeed="MeerkoCFrameSpeed", walkSpeed="MeerkoWalkSpeed", landingDelay="LandingDelay",
-            closeSpeed="MeerkoCloseSpeed", invisDepth="MeerkoInvisDepth", invisAngle="MeerkoInvisAngle",
-            invisAutoDelay="MeerkoInvisAutoDelay", invisRecoverDist="MeerkoInvisRestartDist",
-            invisRecoverWait="MeerkoInvisRestartWait", voidRecoverDelay="MeerkoVoidRecoverDelay",
-            faceAwayDelay="MeerkoFaceAwayDelay", carpetSpeedValue="MeerkoCarpetSpeedValue",
-            autoBuyRange="MeerkoAutoBuyRange", autoBuyHover="MeerkoAutoBuyHover", alertMinGen="MeerkoAlertMinGen",
-        }
-        for k, g in pairs(nums) do
-            if t[k] ~= nil and tonumber(t[k]) ~= nil then _G[g] = tonumber(t[k]) end
-        end
-
-        local bools = {
-            autoTp="MeerkoAutoTP", autoKickOnSteal="MeerkoAutoKickOnSteal", kickToPS="MeerkoKickToPS",
-            priAlert="MeerkoPriAlert", walkSpeedEnabled="MeerkoWalkSpeedOn", invisAuto="MeerkoInvisAuto",
-            invisRecover="MeerkoInvisAutoRecover", invisShown="MeerkoInvisShown", voidRecover="MeerkoVoidRecover",
-            antiFlash="MeerkoAntiFlash", antiFlasherActive="MeerkoAntiFlasherActive", faceAway="MeerkoFaceAway",
-            faceAwayNearest="MeerkoFaceAwayNearest", antiBee="MeerkoAntiBee", infJump="MeerkoInfJump",
-            fpsBoost="MeerkoFPSBoost", faceLock="MeerkoFaceLockWant", faceLockAuto="MeerkoFaceLockAuto",
-            darkMode="MeerkoDarkMode", carpetSpeedOn="MeerkoCarpetSpeedWant", extrasShown="MeerkoExtrasShown",
-            priShown="MeerkoPriListShown", autoBuy="MeerkoAutoBuy", panelsHidden="MeerkoPanelsHidden",
-        }
-        for k, g in pairs(bools) do
-            if t[k] ~= nil then _G[g] = t[k] == true end
-        end
-
-        local strings = {
-            psLink="MeerkoPrivateServerLink", alertSound="MeerkoAlertSound", cloneKey="MeerkoCloneKeyName",
-            kickKey="MeerkoKickKeyName", stopTpKey="MeerkoStopTPKeyName", nearestKey="MeerkoNearestKey",
-            dropKey="MeerkoDropKeyName", resetKey="MeerkoResetKeyName", carpetTool="MeerkoCarpetTool",
-            stealMode="MeerkoStealMode",
-        }
-        for k, g in pairs(strings) do
-            if type(t[k]) == "string" then _G[g] = t[k] end
-        end
-
-        if type(t.autoSteal) == "boolean" then stealOn = t.autoSteal end
-        if type(t.priorityList) == "table" then _G.SHARED_PRIORITY_ITEMS = t.priorityList end
-
-        local coords = {
-            {"iX", "_meerko_iX"}, {"iY", "_meerko_iY"}, {"akX", "_meerko_akX"}, {"akY", "_meerko_akY"},
-            {"exX", "_meerko_exX"}, {"exY", "_meerko_exY"}, {"fX", "_meerko_fX"}, {"fY", "_meerko_fY"},
-            {"kX", "_meerko_kX"}, {"kY", "_meerko_kY"}, {"tgtX", "_meerko_tgtX"}, {"tgtY", "_meerko_tgtY"},
-            {"panelX", "_stp_panelX"}, {"panelY", "_stp_panelY"},
-        }
-        for _, pair in ipairs(coords) do
-            if tonumber(t[pair[1]]) ~= nil then _G[pair[2]] = tonumber(t[pair[1]]) end
-        end
-        if type(t.panelPos) == "table" then _G._stp_pos = t.panelPos end
-    end
-
     local function saveTpSettings()
         if not writefile then return end
         local t = loadCfgTable()
@@ -7593,7 +7486,6 @@ do
         if type(_G.MeerkoDropKeyName)   == "string" then t.dropKey   = _G.MeerkoDropKeyName   else t.dropKey   = nil end
         if type(_G.MeerkoResetKeyName)  == "string" then t.resetKey  = _G.MeerkoResetKeyName  else t.resetKey  = nil end
         t.antiFlash = _G.MeerkoAntiFlash ~= false
-        t.antiFlasherActive = _G.MeerkoAntiFlasherActive == true
         t.faceAway = _G.MeerkoFaceAway == true
         t.faceAwayNearest = _G.MeerkoFaceAwayNearest == true
         t.faceAwayDelay = tonumber(_G.MeerkoFaceAwayDelay) or 2
@@ -7634,9 +7526,7 @@ do
         "MeerkoAutoBuy", "MeerkoAutoBuyRange", "MeerkoAutoBuyHover",
         "MeerkoAntiFlash", "MeerkoFaceAway", "MeerkoFaceAwayNearest",
         "MeerkoFaceAwayDelay", "MeerkoAntiBee", "MeerkoInfJump", "MeerkoFPSBoost",
-        "MeerkoFaceLockWant", "MeerkoFaceLockAuto", "MeerkoDarkMode", "MeerkoAntiFlasherActive",
-        "MeerkoPrivateServerLink", "MeerkoAlertSound", "MeerkoAlertMinGen", "MeerkoCarpetTool",
-        "MeerkoExtrasShown", "MeerkoPriListShown", "AntiDieDisabled",
+        "MeerkoFaceLockWant", "MeerkoFaceLockAuto", "MeerkoDarkMode",
         "MeerkoPanelsHidden", "MeerkoStealMode", "MeerkoNearestKey",
         "MeerkoDropKeyName", "MeerkoResetKeyName", "MeerkoCloneKeyName",
         "MeerkoKickKeyName", "MeerkoStopTPKeyName",
@@ -7693,8 +7583,6 @@ do
     if _G.MeerkoCloseSpeed == nil then _G.MeerkoCloseSpeed = 80 end
     if _G.MeerkoInvisDepth == nil then _G.MeerkoInvisDepth = 4.2 end
     if _G.MeerkoInvisAngle == nil then _G.MeerkoInvisAngle = 180 end
-
-    pcall(loadSavedSettings)
 
     _G.MeerkoLate("KAYA PRIVATE", function()
     local guiParent = (gethui and gethui()) or game:GetService("CoreGui")
