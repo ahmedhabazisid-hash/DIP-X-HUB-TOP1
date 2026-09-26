@@ -5097,6 +5097,12 @@ function goToBrainrot(petPos, slot)
         hum.AutoRotate = true
         hum:ChangeState(Enum.HumanoidStateType.Running)
     end)
+
+    -- On arrival: keep Grapple Hook equipped, but do not activate/fire it again.
+    pcall(function()
+        local g = hrp.Parent and (hrp.Parent:FindFirstChild("Grapple Hook") or findGrapple())
+        if g then hum:EquipTool(g) end
+    end)
 end
 
 _Stats = game:GetService("Stats")
@@ -5273,20 +5279,13 @@ function cframeStepThrough(hrp, waypoints, stepSize)
     local _lastFire = 0
     while hrp and hrp.Parent and os.clock() < deadline do
         if _G.MeerkoTPStop then break end
-        do
-            local char = hrp.Parent
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hum and char and not char:FindFirstChild("Grapple Hook") then
-                local g = findGrapple()
-                if g then pcall(function() hum:EquipTool(g) end) end
-            end
-            if os.clock() - _lastFire > 0.3 then
-                _lastFire = os.clock()
-                if char and char:FindFirstChild("Grapple Hook") then
-                    _fireGrapple()
-                end
-            end
+        local char = hrp.Parent
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum and char and not char:FindFirstChild("Grapple Hook") then
+            local g = findGrapple()
+            if g then pcall(function() hum:EquipTool(g) end) end
         end
+
         local target = waypoints[wpIdx]
         local flat = Vector3.new(target.X - hrp.Position.X, 0, target.Z - hrp.Position.Z)
         local mag = flat.Magnitude
@@ -5295,6 +5294,13 @@ function cframeStepThrough(hrp, waypoints, stepSize)
             if wpIdx > #waypoints then break end
             RunService.Heartbeat:Wait()
         else
+            -- Grapple is used only while travelling, never after reaching the house.
+            if os.clock() - _lastFire > 0.3 then
+                _lastFire = os.clock()
+                if char and char:FindFirstChild("Grapple Hook") then
+                    _fireGrapple()
+                end
+            end
             local hop = math.min(stepSize, mag)
             local nextPos = hrp.Position + flat.Unit * hop
             local _, y = hrp.CFrame:ToEulerAnglesYXZ()
@@ -5305,10 +5311,12 @@ function cframeStepThrough(hrp, waypoints, stepSize)
         end
     end
     do
-        local hum = hrp and hrp.Parent and hrp.Parent:FindFirstChildOfClass("Humanoid")
-        if hum then pcall(function() hum:UnequipTools() end) end
-        task.wait(0.05)
-        equipCarpet()
+        local char = hrp and hrp.Parent
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local g = char:FindFirstChild("Grapple Hook") or findGrapple()
+            if g then pcall(function() hum:EquipTool(g) end) end
+        end
     end
     if hrp and hrp.Parent then
         _vzL(hrp)
@@ -6799,6 +6807,7 @@ do
         end
         stealBarSg = mk("ScreenGui", GUIHOST, {
             Name = "MeerkoStealBar", ResetOnSpawn = false,
+            Enabled = false,
             IgnoreGuiInset = true, DisplayOrder = 120,
         })
         local _bw = 220
@@ -7595,6 +7604,7 @@ do
 
     local sg = mk("ScreenGui", nil, {
         Name = "MeerkoTP", ResetOnSpawn = false, IgnoreGuiInset = true,
+        Enabled = false,
         DisplayOrder = 999999, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     })
     pcall(function() sg.Parent = guiParent end)
@@ -7846,6 +7856,7 @@ _G.MeerkoLate("TARGETS", function()
 
     local sg = mk("ScreenGui", nil, {
         Name = "MeerkoTargets", ResetOnSpawn = false,
+        Enabled = false,
         IgnoreGuiInset = true, DisplayOrder = 999998,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     })
@@ -8735,7 +8746,7 @@ _G.MeerkoLate("EXTRAS", function()
         Name = "MeerkoExtras", ResetOnSpawn = false,
         IgnoreGuiInset = true, DisplayOrder = 999997,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        Enabled = true,
+        Enabled = false,
     })
     pcall(function() sg.Parent = host end)
     if not sg.Parent then
@@ -9120,7 +9131,7 @@ _G.MeerkoLate("VEHICLE SELECT", function()
     local sg = mk("ScreenGui", nil, {
         Name = "MeerkoVehicleSelect", ResetOnSpawn = false,
         IgnoreGuiInset = true, DisplayOrder = 999993,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Enabled = true,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Enabled = false,
     })
     pcall(function() sg.Parent = host end)
     if not sg.Parent then
@@ -9260,7 +9271,7 @@ _G.MeerkoLate("TP BIND", function()
         Name = "MeerkoTPBind", ResetOnSpawn = false,
         IgnoreGuiInset = true, DisplayOrder = 999995,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        Enabled = _G.MeerkoTPBindShown ~= false,
+        Enabled = false,
     })
     pcall(function() sg2.Parent = host end)
     if not sg2.Parent then
@@ -9510,6 +9521,7 @@ _G.MeerkoLate("TP SPEED", function()
     end)
     local sg = mk("ScreenGui", nil, {
         Name = "MeerkoTPSpeed", ResetOnSpawn = false,
+        Enabled = false,
         IgnoreGuiInset = true, DisplayOrder = 999996,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     })
@@ -9748,7 +9760,7 @@ _G.MeerkoLate("PR LIST", function()
         Name = "MeerkoPriList", ResetOnSpawn = false,
         IgnoreGuiInset = true, DisplayOrder = 999998,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        Enabled = _G.MeerkoPriListShown == true,
+        Enabled = false,
     })
     pcall(function() sg.Parent = host end)
     if not sg.Parent then
@@ -10078,6 +10090,7 @@ _G.MeerkoLate("TIMER ESP", function()
     end
     local sg = mk("ScreenGui", nil, {
         Name = "MeerkoTimerESP", ResetOnSpawn = false,
+        Enabled = false,
         IgnoreGuiInset = true, DisplayOrder = 999995,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     })
@@ -10575,7 +10588,7 @@ _G.MeerkoLate("INVIS", function()
         Name = "MeerkoInvis", ResetOnSpawn = false,
         IgnoreGuiInset = true, DisplayOrder = 999994,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        Enabled = true,
+        Enabled = false,
     })
     pcall(function() sg.Parent = host end)
     if not sg.Parent then
@@ -10921,6 +10934,7 @@ _G.MeerkoLate("AUTO KICK", function()
     end)
     local sg = mk("ScreenGui", nil, {
         Name = "MeerkoAutoKick", ResetOnSpawn = false,
+        Enabled = false,
         IgnoreGuiInset = true, DisplayOrder = 999993,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     })
@@ -11191,6 +11205,7 @@ _G.MeerkoLate("ANTIFLASHER", function()
     end)
     local sg = mk("ScreenGui", nil, {
         Name = "MeerkoAntiFlasher", ResetOnSpawn = false,
+        Enabled = false,
         IgnoreGuiInset = true, DisplayOrder = 999992,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     })
@@ -11378,6 +11393,7 @@ _G.MeerkoLate("PANEL HIDE", function()
     end)
     local sg = mk("ScreenGui", nil, {
         Name = "MeerkoPanelHide", ResetOnSpawn = false,
+        Enabled = false,
         IgnoreGuiInset = true, DisplayOrder = 1000000,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     })
